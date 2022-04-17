@@ -35,6 +35,7 @@
     class State {
         private:
             Process processBuffer = Process("fsdf");
+            unsigned long maxQueueSize = 0;
         public:
             bool CPU1isAvailable = true;
             bool CPU2isAvailable = true;
@@ -42,6 +43,8 @@
             void available(int cpuId);
             bool isCPUAvailable() const;
             void passProcess(Process &process);
+            void measureQueueSize(unsigned long currentSize);
+            unsigned long getMaxQueueSize() const;
             Process getProcess();
             State() = default;
     };
@@ -51,8 +54,9 @@
         private:
             std::queue<Process> queue;
         public:
-            explicit Queue() = default;;
+            explicit Queue() = default;
             void push(const Process& process);
+            unsigned long size();
             Process pop();
             bool empty();
     };

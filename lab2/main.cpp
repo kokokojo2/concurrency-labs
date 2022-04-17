@@ -20,19 +20,19 @@ int main() {
     srand(time(nullptr));
     unsigned int numProcesses;
     RandomRanges ranges{};
-    std::cout << "Input the num of processes to generate :";
+    std::cout << "Input the num of processes to generate: ";
     std::cin >> numProcesses;
 
-    std::cout << "Input the min sleep time :";
+    std::cout << "Input the min sleep time: ";
     std::cin >> ranges.minSleepTime;
 
-    std::cout << "Input the max sleep time :";
+    std::cout << "Input the max sleep time: ";
     std::cin >> ranges.maxSleepTime;
 
-    std::cout << "Input the min execution time :";
+    std::cout << "Input the min execution time: ";
     std::cin >> ranges.minExecutionTime;
 
-    std::cout << "Input the max execution time :";
+    std::cout << "Input the max execution time: ";
     std::cin >> ranges.maxExecutionTime;
 
     std::thread cpu1(CPUProc, 1);
@@ -44,5 +44,6 @@ int main() {
     cpu1.join();
     cpu2.join();
 
+    std::cout << "Queue max size is " << state.getMaxQueueSize() << std::endl;
     return 0;
 }

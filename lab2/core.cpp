@@ -32,7 +32,6 @@ Process::Process(int executionTime, int id, const std::string& prefix) : IRunnab
 }
 
 int Process::getPid() const { return this->pid; }
-int Process::getLifeTime() const { return this->lifeTime; }
 
 void Process::run() {
     this->print(
@@ -58,12 +57,19 @@ void CPU::run() {
     while(true) {
         Process process = Process("fd");
 
-        if(stopWork) break;
+        if(stopWork) {
+            print("Terminating.\n");
+            break;
+        }
 
         if (this->queue->empty()) {
             std::unique_lock<std::mutex> lock{condVariableMutex};
             print("The process queue is empty, waiting for new process to arrive.\n");
             newProcessCondVar.wait(lock);
+            if(stopWork) {
+                print("Terminating.\n");
+                break;
+            }
             process = this->state->getProcess();
             lock.unlock();
         }
@@ -109,6 +115,16 @@ bool Queue::empty() {
     return this->queue.empty();
 }
 
+unsigned long Queue::size() {
+    return this->queue.size();
+}
+
+unsigned long State::getMaxQueueSize() const { return this->maxQueueSize; }
+
+void State::measureQueueSize(unsigned long currentSize) {
+    if(currentSize > this->maxQueueSize) this->maxQueueSize = currentSize;
+}
+
 ProcessGenerator::ProcessGenerator(
         Queue &queue,
         State &state,
@@ -147,6 +163,7 @@ void ProcessGenerator::run() {
                     + std::to_string(p.getPid()) + ") to the queue.\n"
             );
             this->queue->push(p);
+            this->state->measureQueueSize(this->queue->size());
         }
 
         int sleepTime = this->ranges->minSleepTime + rand() % this->ranges->maxSleepTime;
@@ -154,7 +171,10 @@ void ProcessGenerator::run() {
         print("The next process will arrive in " + std::to_string(sleepTime) + " seconds\n");
         std::this_thread::sleep_for(std::chrono::seconds(sleepTime));
     }
+
+    print("Terminating.\n");
     stopWork = true;
+    newProcessCondVar.notify_all();
 }
 
 void State::busy(int cpuId)  {
