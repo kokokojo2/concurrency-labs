@@ -3,13 +3,14 @@
 #include <mutex>
 #include <condition_variable>
 #include <iomanip>
-#include <unistd.h>
 
 #include "core.h"
 
 std::mutex queueMutex, emptyQueueMutex, printMutex;
 std::mutex condVariableMutex;
 std::condition_variable newProcessCondVar;
+
+bool stopWork = false;
 
 void safePrint(const std::string &message, const std::string &prefix) {
     printMutex.lock();
@@ -53,15 +54,18 @@ CPU::CPU(int id, Queue &queue, State &state, const std::string &prefix) : IRunna
     this->print("Started.\n");
 }
 
-[[noreturn]] void CPU::run() {
+void CPU::run() {
     while(true) {
         Process process = Process("fd");
 
-        std::unique_lock<std::mutex> lock{condVariableMutex};
+        if(stopWork) break;
+
         if (this->queue->empty()) {
+            std::unique_lock<std::mutex> lock{condVariableMutex};
             print("The process queue is empty, waiting for new process to arrive.\n");
             newProcessCondVar.wait(lock);
             process = this->state->getProcess();
+            lock.unlock();
         }
         else {
             print("Getting process from the queue.\n");
@@ -105,18 +109,28 @@ bool Queue::empty() {
     return this->queue.empty();
 }
 
-ProcessGenerator::ProcessGenerator(Queue &queue, State &state, const std::string &prefix) : IRunnable(prefix) {
+ProcessGenerator::ProcessGenerator(
+        Queue &queue,
+        State &state,
+        const std::string &prefix,
+        unsigned int procNum,
+        RandomRanges &ranges
+        )
+: IRunnable(prefix) {
     this->queue = &queue;
     this->state = &state;
+    this->maxProcesses = procNum;
+    this->ranges = &ranges;
     print("Initialized.\n");
 }
 
-[[noreturn]] void ProcessGenerator::run() {
-    while(true) {
+void ProcessGenerator::run() {
+    for(int i = 1; i < this->maxProcesses + 1; i++) {
+        this->print("new turn\n");
         auto p = Process(
-                10 + rand() % 9,
-                this->nextPid,
-                "Process" + std::to_string(this->nextPid)
+                this->ranges->minExecutionTime + rand() % this->ranges->maxExecutionTime,
+                i,
+                "Process" + std::to_string(i)
         );
         this->print("Process(pid="+ std::to_string(p.getPid()) + ") was initialized.\n");
 
@@ -127,26 +141,20 @@ ProcessGenerator::ProcessGenerator(Queue &queue, State &state, const std::string
             );
             this->state->passProcess(p);
             newProcessCondVar.notify_one();
-            this->print("Notified!\n");
         } else {
             print(
                     "There is no any available CPUs, pushing the Process(pid="
-                    + std::to_string(p.getPid()) + ") to the queue."
+                    + std::to_string(p.getPid()) + ") to the queue.\n"
             );
             this->queue->push(p);
         }
-        // TODO: check if process is free
-        // TODO: pass to a buffer if someone is free
-        // TODO: pass to a queue if everyone is busy
 
-        nextPid++;
-
-        int sleepTime = 1 + rand() % 9;
+        int sleepTime = this->ranges->minSleepTime + rand() % this->ranges->maxSleepTime;
 
         print("The next process will arrive in " + std::to_string(sleepTime) + " seconds\n");
         std::this_thread::sleep_for(std::chrono::seconds(sleepTime));
-
     }
+    stopWork = true;
 }
 
 void State::busy(int cpuId)  {
@@ -168,7 +176,7 @@ void State::passProcess(Process &process) {
 }
 
 Process State::getProcess() {
-    return Process(this->processBuffer.getLifeTime(), this->processBuffer.getPid(), "fdf");
+    return this->processBuffer;
 }
 
 

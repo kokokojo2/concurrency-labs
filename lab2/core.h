@@ -12,6 +12,12 @@
             explicit IRunnable(const std::string &prefix);
     };
 
+    struct RandomRanges {
+        int minSleepTime;
+        int maxSleepTime;
+        int minExecutionTime;
+        int maxExecutionTime;
+    };
 
     class Process : IRunnable {
         private:
@@ -58,18 +64,25 @@
             State *state;
         public:
             explicit CPU(int id, Queue &queue, State &state, const std::string &prefix);
-            [[noreturn]] void run() override;
+            void run() override;
     };
     void safePrint(const std::string &message, const std::string &prefix);
 
     class ProcessGenerator : IRunnable {
         private:
-            int nextPid = 1;
+            unsigned int maxProcesses;
             Queue *queue;
             State *state;
+            RandomRanges *ranges;
         public:
-            explicit ProcessGenerator(Queue &queue, State &state, const std::string &prefix);
-            [[noreturn]] void run() override;
+            explicit ProcessGenerator(
+                    Queue &queue,
+                    State &state,
+                    const std::string &prefix,
+                    unsigned int procNum,
+                    RandomRanges &ranges
+            );
+            void run() override;
     };
 
 #endif
