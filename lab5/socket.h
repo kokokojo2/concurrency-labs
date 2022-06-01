@@ -11,18 +11,29 @@
 #define PC_LAB1_SOCKET_H
 
 
-class Socket : Logger {
+class Socket : public Logger {
+protected:
     int socketDesc;
     int port;
-    int connectionDesc{};
 public:
     explicit Socket(int port);
-    void binAndListen();
-    std::string waitForMessage();
-    void reply(const std::string& message);
-    void writeToServer(const std::string& serverIP, int serverPort, const std::string& message);
-    std::string getResponse();
 };
 
+class ClientSocket : Socket {
+public:
+    explicit ClientSocket(int port) : Socket(port) {};
+    void connect(const std::string& serverIP, int serverPort);
+    void writeMessage(const std::string &message);
+    std::string readMessage();
+};
+
+class ServerSocket : Socket {
+public:
+    explicit ServerSocket(int port) : Socket(port) {};
+    void binAndListen();
+    int waitForConnection();
+    std::string getMessage(int connectionId);
+    void sendMessage(int connectionId, const std::string& message);
+};
 
 #endif //PC_LAB1_SOCKET_H

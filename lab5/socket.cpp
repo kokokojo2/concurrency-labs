@@ -17,7 +17,7 @@ Socket::Socket(int port) {
     this->print("A TCP socket was created.", false);
 }
 
-void Socket::binAndListen() {
+void ServerSocket::binAndListen() {
     struct sockaddr_in serverAddress{};
     serverAddress.sin_family = AF_INET;
     serverAddress.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -35,24 +35,27 @@ void Socket::binAndListen() {
     this->print("The socket was bound and ready for communication.", false);
 }
 
-std::string Socket::waitForMessage() {
+int ServerSocket::waitForConnection() {
     struct sockaddr_in clientAddr{};
     socklen_t clientAddressLen = sizeof(clientAddr);
 
-    this->connectionDesc = accept(
+    int connectionDesc = accept(
             this->socketDesc,
             (struct sockaddr*)&clientAddr,
             &clientAddressLen
     );
-    if(this->connectionDesc == -1) {
+    if(connectionDesc == -1) {
         this->print("Some error occur while accepting connection.", true);
         exit(EXIT_FAILURE);
     }
+    return connectionDesc;
+}
 
+std::string ServerSocket::getMessage(int connectionDesc) {
     int messageMaxLength = 1024;
     char message[messageMaxLength];
 
-    long messageSize = read(this->connectionDesc, message, messageMaxLength);
+    long messageSize = read(connectionDesc, message, messageMaxLength);
     this->print("Received message of size = " + std::to_string(messageSize) + " bytes.", true);
     if (messageSize == -1) {
         this->print("Some error occur while receiving the message.", true);
@@ -62,14 +65,14 @@ std::string Socket::waitForMessage() {
     return std::string(message);
 }
 
-void Socket::reply(const std::string& message) {
-    if (write(this->connectionDesc, message.c_str(), sizeof(message.c_str())) == -1) {
+void ServerSocket::sendMessage(int connectionDesc, const std::string& message) {
+    if (write(connectionDesc, message.c_str(), sizeof(message.c_str())) == -1) {
         this->print("Some error occur while replying to the message.", true);
         exit(EXIT_FAILURE);
     }
 }
 
-void Socket::writeToServer(const std::string& serverIP, int serverPort, const std::string &message) {
+void ClientSocket::connect(const std::string& serverIP, int serverPort) {
     struct sockaddr_in serverAddress{};
     serverAddress.sin_family = AF_INET;
     serverAddress.sin_port = htons(serverPort);
@@ -77,7 +80,7 @@ void Socket::writeToServer(const std::string& serverIP, int serverPort, const st
         exit(EXIT_FAILURE);
     }
 
-    if (connect(
+    if (::connect(
             this->socketDesc,
             (struct sockaddr *)&serverAddress,
             sizeof(serverAddress)
@@ -85,12 +88,17 @@ void Socket::writeToServer(const std::string& serverIP, int serverPort, const st
         this->print("Some error occur while connecting to the server.", false);
         exit(EXIT_FAILURE);
     }
+}
 
-    write(this->socketDesc, message.c_str(), sizeof(message.c_str()));
+void ClientSocket::writeMessage(const std::string &message) {
+    if(write(this->socketDesc, message.c_str(), sizeof(message.c_str())) == -1) {
+        this->print("Some error occur while replying to the message.", true);
+        exit(EXIT_FAILURE);
+    }
     this->print("Message was sent.", false);
 }
 
-std::string Socket::getResponse() {
+std::string ClientSocket::readMessage() {
     int bufferSize = 1024;
     char receivedMessage [bufferSize];
 
