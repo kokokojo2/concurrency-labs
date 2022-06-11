@@ -1,6 +1,6 @@
 #include <iostream>
-#include <chrono>
 #include <thread>
+
 #include "socket.h"
 #include "constants.h"
 #include "protocol.cpp"
@@ -54,6 +54,34 @@ private:
 
         return currentUser;
     }
+
+    void playTurn(user player) {
+        // TODO: get current board state, print it and ask for option
+        std::string anyOption;
+        std::cin >> anyOption;
+
+        TicTacToeCommand playTurnCommand;
+        playTurnCommand.command = command.playTurn;
+        // TODO: include coords in option to the command
+        writeCommand(this->socket, playTurnCommand);
+        // TODO: wait for accepted message
+    }
+
+    void playGame(user player) {
+        auto gameStartedMessage = waitForValidMessage(this->socket, status.gameStarted);
+        this->print("The second player is connected and the game is starting.", false);
+
+        while (true) {
+            this->print("Please, wait until your turn starts.", false);
+            auto turnStartedMessage = waitForValidMessage(this->socket, status.turnStarted);
+
+            this->print("It is your turn now.", false);
+            // TODO: then play the turn
+            playTurn(player);
+            this->print("Your turn has been ended.", false);
+        }
+
+    }
 public:
     explicit GameClient(int port) : socket(port) {
         this->prefix = "Client";
@@ -66,7 +94,7 @@ public:
 
         this->print("You have successfully logged in: " + getUserRepr(currentUser), false);
         if (currentUser.type == user_type.player) {
-            // TODO: start game, handle player
+            this->playGame(currentUser);
         }
         if (currentUser.type == user_type.spectator) {
             // TODO: handle spectator
