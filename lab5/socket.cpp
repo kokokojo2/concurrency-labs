@@ -66,7 +66,7 @@ std::string ServerSocket::getMessage(int connectionDesc) {
 }
 
 void ServerSocket::sendMessage(int connectionDesc, const std::string& message) {
-    if (write(connectionDesc, message.c_str(), sizeof(message.c_str())) == -1) {
+    if (write(connectionDesc, message.c_str(), message.size()) == -1) {
         this->print("Some error occur while replying to the message.", true);
         exit(EXIT_FAILURE);
     }
@@ -91,7 +91,7 @@ void ClientSocket::connect(const std::string& serverIP, int serverPort) {
 }
 
 void ClientSocket::writeMessage(const std::string &message) {
-    if(write(this->socketDesc, message.c_str(), sizeof(message.c_str())) == -1) {
+    if(write(this->socketDesc, message.c_str(), message.size()) == -1) {
         this->print("Some error occur while replying to the message.", true);
         exit(EXIT_FAILURE);
     }
@@ -112,5 +112,7 @@ std::string ClientSocket::readMessage() {
         this->print("Some error occur while receiving the message.", false);
         exit(EXIT_FAILURE);
     }
+    receivedMessage[messageSize] = '\0';
+
     return std::string(receivedMessage);
 }
