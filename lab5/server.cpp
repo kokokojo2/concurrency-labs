@@ -35,34 +35,8 @@ private:
         return -1;
     }
 
-    std::string waitForMessage(int connectionDesc) {
-        while (true) {
-            std::string message = this->socket.getMessage(connectionDesc);
-            if (!message.empty()) return message;
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-    }
-    TicTacToeCommand waitForValidCommand(int connectionDesc) {
-        while (true) {
-            std::string message = this->waitForMessage(connectionDesc);
-            TicTacToeCommand parsedCommand = parseRequest(message);
-            if (parsedCommand.valid) return parsedCommand;
-
-            this->print("Got invalid command. This is likely to be the problem with client.", false);
-            printCommand(parsedCommand);
-
-            TicTacToeMessage messageInvalidCommand;
-            messageInvalidCommand.status = status.previousCommandInvalid;
-            this->sendMessage(connectionDesc, messageInvalidCommand);
-        }
-    }
-
-    void sendMessage(int connectionDesc, const TicTacToeMessage&  message) {
-        socket.sendMessage(connectionDesc, messageToString(message));
-    }
-
     user handleNewUser(int connectionDesc) {
-        auto parsedCommand = this->waitForValidCommand(connectionDesc);
+        auto parsedCommand = waitForValidCommand(this->socket, connectionDesc);
         this->print(
                 "New client has connected and wants to " + getReprCommand(parsedCommand.command) + ".",
                 true);
@@ -93,7 +67,8 @@ private:
             }
         }
 
-        this->sendMessage(connectionDesc, message);
+        sendMessage(this->socket, connectionDesc, message);
+        currentUser.connectionDesc = connectionDesc;
         return currentUser;
     }
 

@@ -8,32 +8,6 @@
 class GameClient : public Logger {
 private:
     ClientSocket socket;
-    std::string prefix = "GameClient";
-
-    void writeCommand(TicTacToeCommand ticTacToeCommand) {
-        this->socket.writeMessage(commandToString(ticTacToeCommand));
-    }
-
-    std::string waitForMessage() {
-        while (true) {
-            std::string message = this->socket.readMessage();
-            if (!message.empty()) return message;
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-    }
-
-    TicTacToeMessage waitForValidMessage() {
-        while (true) {
-            std::string message = this->waitForMessage();
-            TicTacToeMessage parsedMessage = parseResponse(message);
-            if (!parsedMessage.valid) {
-                this->print("Got invalid message. This is likely to be the problem with server.", false);
-                printMessage(parsedMessage);
-                continue;
-            }
-            return parsedMessage;
-        }
-    }
 
     // TODO: make chooseCommandDialog instead
     int optionDialog(std::vector<std::string> options) {
@@ -53,8 +27,8 @@ private:
     user connectToGame() {
         TicTacToeCommand connectToGameCommand;
         connectToGameCommand.command = command.connectToGame;
-        this->writeCommand(connectToGameCommand);
-        TicTacToeMessage responseMessage = this->waitForValidMessage();
+        writeCommand(this->socket, connectToGameCommand);
+        TicTacToeMessage responseMessage = waitForValidMessage(this->socket);
         user currentUser{};
 
          // user is connected to game as a player
@@ -71,8 +45,8 @@ private:
             TicTacToeCommand optionCommand;
             optionCommand.command = option == 0 ? command.watchGame : command.disconnect;
 
-            this->writeCommand(optionCommand);
-            auto response = this->waitForValidMessage();
+            writeCommand(this->socket, optionCommand);
+            auto response = waitForValidMessage(this->socket);
             if (response.status == status.accepted) {
                 currentUser.type = optionCommand.command == command.watchGame ? user_type.spectator : user_type.exited;
             }

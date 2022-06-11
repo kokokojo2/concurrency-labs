@@ -2,6 +2,7 @@
 #include <string>
 #include <regex>
 #include <vector>
+#include "socket.h"
 
 std::vector<std::string> split_to_tokens(const std::string& string, char delimiter) {
     std::vector<std::string> strings;
@@ -42,10 +43,16 @@ struct statusEnum {
     int accepted = 1;
     int error = 2;
     int previousCommandInvalid = 3;
+    int gameStarted = 4;
+    int turnStarted = 5;
 } status;
 
 bool isValidMessageStatus(int statusId) {
-    return statusId == status.accepted || statusId == status.error || statusId == status.previousCommandInvalid;
+    return statusId == status.accepted ||
+    statusId == status.error ||
+    statusId == status.previousCommandInvalid ||
+    statusId == status.gameStarted ||
+    statusId == status.turnStarted;
 }
 
 struct TicTacToeCommand {
@@ -167,6 +174,7 @@ struct userType {
 struct user {
     int type;
     int id;
+    int connectionDesc;
 };
 
 std::string getUserRepr(user currentUser) {
@@ -177,3 +185,81 @@ std::string getUserRepr(user currentUser) {
     return "unknown";
 }
 
+// wrappers to send/get protocol objects easily
+// client functions
+void writeCommand(ClientSocket socket, const TicTacToeCommand& ticTacToeCommand) {
+    socket.writeMessage(commandToString(ticTacToeCommand));
+}
+
+TicTacToeMessage waitForMessage(ClientSocket socket) {
+    while (true) {
+        std::string message = socket.readMessage();
+        if (!message.empty()) return parseResponse(message);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+}
+
+TicTacToeMessage waitForValidMessage(ClientSocket socket) {
+    while (true) {
+        auto message = waitForMessage(socket);
+        if (!message.valid) {
+            std::cout << "Got invalid message. This is likely to be the problem with server.";
+            printMessage(message);
+            continue;
+        }
+        return message;
+    }
+}
+
+TicTacToeMessage waitForValidMessage(ClientSocket socket, int expectedStatus) {
+    while (true) {
+        auto message = waitForMessage(socket);
+        if (!message.valid || message.status != expectedStatus) {
+            std::cout << "Got invalid message. This is likely to be the problem with server." << std::endl;
+            printMessage(message);
+            continue;
+        }
+        return message;
+    }
+}
+
+// server functions
+void sendMessage(ServerSocket socket, int connectionDesc, const TicTacToeMessage&  message) {
+    socket.sendMessage(connectionDesc, messageToString(message));
+}
+
+TicTacToeCommand waitForCommand(ServerSocket socket, int connectionDesc) {
+    while (true) {
+        std::string message = socket.getMessage(connectionDesc);
+        if (!message.empty()) return parseRequest(message);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+}
+
+TicTacToeCommand waitForValidCommand(ServerSocket socket, int connectionDesc) {
+    while (true) {
+        auto parsedCommand = waitForCommand(socket, connectionDesc);
+        if (parsedCommand.valid) return parsedCommand;
+
+        std::cout << "Got invalid command. This is likely to be the problem with client." << std::endl;
+        printCommand(parsedCommand);
+
+        TicTacToeMessage messageInvalidCommand;
+        messageInvalidCommand.status = status.previousCommandInvalid;
+        sendMessage(socket, connectionDesc, messageInvalidCommand);
+    }
+}
+
+TicTacToeCommand waitForValidCommand(ServerSocket socket, int connectionDesc, int expectedCommand) {
+    while (true) {
+        auto parsedCommand = waitForCommand(socket, connectionDesc);
+        if (parsedCommand.valid && parsedCommand.command == expectedCommand) return parsedCommand;
+
+        std::cout << "Got invalid command. This is likely to be the problem with client." << std::endl;
+        printCommand(parsedCommand);
+
+        TicTacToeMessage messageInvalidCommand;
+        messageInvalidCommand.status = status.previousCommandInvalid;
+        sendMessage(socket, connectionDesc, messageInvalidCommand);
+    }
+}
