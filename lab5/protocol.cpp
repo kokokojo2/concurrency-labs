@@ -3,6 +3,7 @@
 #include <regex>
 #include <vector>
 #include "socket.h"
+#include "constants.h"
 
 std::vector<std::string> split_to_tokens(const std::string& string, char delimiter) {
     std::vector<std::string> strings;
@@ -45,6 +46,7 @@ struct statusEnum {
     int previousCommandInvalid = 3;
     int gameStarted = 4;
     int turnStarted = 5;
+    int currentBoard = 6;
 } status;
 
 bool isValidMessageStatus(int statusId) {
@@ -52,7 +54,8 @@ bool isValidMessageStatus(int statusId) {
     statusId == status.error ||
     statusId == status.previousCommandInvalid ||
     statusId == status.gameStarted ||
-    statusId == status.turnStarted;
+    statusId == status.turnStarted ||
+    statusId == status.currentBoard;
 }
 
 struct TicTacToeCommand {
@@ -70,6 +73,7 @@ struct TicTacToeMessage {
     bool valid{};
     std::string errorMessage{};
     int status{};
+    std::vector<std::vector<int>> boardState;
 };
 
 
@@ -104,6 +108,12 @@ TicTacToeCommand parseRequest(const std::string& rawCommand) {
         }
         parsedCommand.xCoord = std::stoi(params[0]);
         parsedCommand.yCoord = std::stoi(params[1]);
+
+        if (parsedCommand.xCoord >= BOARD_SIZE || parsedCommand.yCoord >= BOARD_SIZE) {
+            parsedCommand.valid = false;
+            parsedCommand.errorMessage = "Wrong params for this command type.";
+            return parsedCommand;
+        }
     }
 
     return parsedCommand;
@@ -136,30 +146,91 @@ TicTacToeMessage parseResponse(const std::string& rawMessage) {
     TicTacToeMessage parsedMessage;
     parsedMessage.rawBody = rawMessage;
 
-    // parsing message status
-    int parsedStatus = std::stoi(rawMessage);
-    if(!isValidMessageStatus(parsedStatus)) {
+    std::regex pattern("^([0-9]):(.*)$");
+    std::smatch matches;
+    if(!std::regex_search(rawMessage, matches, pattern)) {
+        parsedMessage.valid = false;
+        parsedMessage.errorMessage = "Syntax error in message body.";
+        return parsedMessage;
+    }
+
+    int parsedMessageStatus = std::stoi(matches[1].str());
+    if(!isValidMessageStatus(parsedMessageStatus)) {
         parsedMessage.valid = false;
         parsedMessage.errorMessage = "Invalid status.";
         return parsedMessage;
     }
+    parsedMessage.status = parsedMessageStatus;
+
+    if(parsedMessage.status == status.currentBoard) {
+        std::vector<std::string> params = split_to_tokens(matches[2].str(), ',');
+        if (params.size() != BOARD_SIZE * BOARD_SIZE) {
+            parsedMessage.valid = false;
+            parsedMessage.errorMessage = "Wrong params for this command type.";
+            return parsedMessage;
+        }
+        std::vector<std::vector<int>> board;
+        for(int i = 0; i < params.size(); i+= BOARD_SIZE) {
+            std::vector<int> boardRow = {
+                    std::stoi(params[i]),
+                    std::stoi(params[i + 1]),
+                    std::stoi(params[i + 2])
+            };
+            board.push_back(boardRow);
+        }
+        parsedMessage.boardState = board;
+    }
+
 
     parsedMessage.valid = true;
-    parsedMessage.status = parsedStatus;
     return parsedMessage;
 }
 
+std::string boardToString(std::vector<std::vector<int>> board) {
+    std::string serializedBoard;
+    for (int i = 0; i < BOARD_SIZE; i++) {
+        for (int j = 0; j < BOARD_SIZE; j++) {
+            serializedBoard += std::to_string(board[i][j]) + ",";
+        }
+    }
+    serializedBoard.pop_back();
+    return serializedBoard;
+}
+
+std::string  getCellRepr(int cellValue) {
+    if (cellValue == 0) return "-";
+    if (cellValue == 1) return "x";
+    if (cellValue == 2) return "o";
+    return "unknown";
+}
+
+void printBoard(std::vector<std::vector<int>> board) {
+    std::cout << "Current game state:" << std::endl;
+    for (int i = 0; i < BOARD_SIZE; i++) {
+        for (int j = 0; j < BOARD_SIZE; j++) {
+            std::cout << getCellRepr(board[i][j]) << " ";
+        }
+        std::cout << std::endl;
+    }
+}
+
+
 std::string messageToString(const TicTacToeMessage& ticTacToeMessage) {
-    return std::to_string(ticTacToeMessage.status);
+    std::string serializedMessage =  std::to_string(ticTacToeMessage.status) + ":";
+    if (ticTacToeMessage.status == status.currentBoard) {
+        serializedMessage += boardToString(ticTacToeMessage.boardState);
+    }
+    return serializedMessage;
 }
 
 void printMessage(const TicTacToeMessage& message) {
-    std::cout << "TicTacToeMessage: valid=" << message.valid << std::endl;
-    std::cout << "  raw: " << message.rawBody << std::endl;
-    if (!message.valid) {
-        std::cout << "  Error message: " << message.errorMessage << std::endl;
+    auto message1 = parseResponse(messageToString(message));
+    std::cout << "TicTacToeMessage: valid=" << message1.valid << std::endl;
+    std::cout << "  raw: " << message1.rawBody << std::endl;
+    if (!message1.valid) {
+        std::cout << "  Error message: " << message1.errorMessage << std::endl;
     } else {
-        std::cout << "  statusId=" << message.status << std::endl;
+        std::cout << "  statusId=" << message1.status << std::endl;
     }
 }
 
