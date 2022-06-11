@@ -47,6 +47,9 @@ struct statusEnum {
     int gameStarted = 4;
     int turnStarted = 5;
     int currentBoard = 6;
+    int youWon = 7;
+    int youLost = 9;
+    int tie = 10;
 } status;
 
 bool isValidMessageStatus(int statusId) {
@@ -55,7 +58,17 @@ bool isValidMessageStatus(int statusId) {
     statusId == status.previousCommandInvalid ||
     statusId == status.gameStarted ||
     statusId == status.turnStarted ||
-    statusId == status.currentBoard;
+    statusId == status.currentBoard ||
+    statusId == status.youWon ||
+    statusId == status.youLost ||
+    statusId == status.tie;
+}
+
+bool hasBoardInBody(int statusId) {
+    return statusId == status.currentBoard ||
+    statusId == status.youWon ||
+    statusId == status.youLost ||
+    statusId == status.tie;
 }
 
 struct TicTacToeCommand {
@@ -146,7 +159,7 @@ TicTacToeMessage parseResponse(const std::string& rawMessage) {
     TicTacToeMessage parsedMessage;
     parsedMessage.rawBody = rawMessage;
 
-    std::regex pattern("^([0-9]):(.*)$");
+    std::regex pattern("^([0-9]*):(.*)$");
     std::smatch matches;
     if(!std::regex_search(rawMessage, matches, pattern)) {
         parsedMessage.valid = false;
@@ -162,7 +175,7 @@ TicTacToeMessage parseResponse(const std::string& rawMessage) {
     }
     parsedMessage.status = parsedMessageStatus;
 
-    if(parsedMessage.status == status.currentBoard) {
+    if(hasBoardInBody(parsedMessage.status)) {
         std::vector<std::string> params = split_to_tokens(matches[2].str(), ',');
         if (params.size() != BOARD_SIZE * BOARD_SIZE) {
             parsedMessage.valid = false;
@@ -217,20 +230,23 @@ void printBoard(std::vector<std::vector<int>> board) {
 
 std::string messageToString(const TicTacToeMessage& ticTacToeMessage) {
     std::string serializedMessage =  std::to_string(ticTacToeMessage.status) + ":";
-    if (ticTacToeMessage.status == status.currentBoard) {
+    if (hasBoardInBody(ticTacToeMessage.status)) {
         serializedMessage += boardToString(ticTacToeMessage.boardState);
     }
     return serializedMessage;
 }
 
 void printMessage(const TicTacToeMessage& message) {
-    auto message1 = parseResponse(messageToString(message));
-    std::cout << "TicTacToeMessage: valid=" << message1.valid << std::endl;
-    std::cout << "  raw: " << message1.rawBody << std::endl;
-    if (!message1.valid) {
-        std::cout << "  Error message: " << message1.errorMessage << std::endl;
+    std::cout << "TicTacToeMessage: valid=" << message.valid << std::endl;
+    std::cout << "  raw: " << message.rawBody << std::endl;
+    if (!message.valid) {
+        std::cout << "  Error message: " << message.errorMessage << std::endl;
     } else {
-        std::cout << "  statusId=" << message1.status << std::endl;
+        std::cout << "  statusId=" << message.status << std::endl;
+    }
+
+    if (hasBoardInBody(message.status)) {
+        printBoard(message.boardState);
     }
 }
 
