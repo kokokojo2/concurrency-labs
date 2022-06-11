@@ -23,20 +23,30 @@ private:
     int playerOneConnectionDesc = -1;
     int playerTwoConnectionDesc = -1;
 
-    // game data
-    const static int boardSize = 3;
     // 0 - cell is empty
     // 1 - user with id=1 owns the cell
     // 2 - user with id=1 owns the cell
-    int board[boardSize][boardSize] = {0};
+    std::vector<std::vector<int>> board;
+
+    // 0 - game is in progress
+    // 1 - player 1 won the game
+    // 2 - player 2 won the game
+    // -1 - all cells are full, but there is no winner
+    int winnerId = 0;
+
 
     // board methods
     void clearBoard() {
-        for (int i = 0; i < boardSize; i++) {
-            for (int j = 0; j < boardSize; j++) {
-                this->board[i][j] = 0;
-            }
+        this->board = constructBoard();
+    }
+
+    static std::vector<std::vector<int>> constructBoard() {
+        std::vector<std::vector<int>> newBoard;
+        for (int i = 0; i < BOARD_SIZE; i++) {
+            std::vector<int> boardRow = {0, 0, 0};
+            newBoard.push_back(boardRow);
         }
+        return newBoard;
     }
 
     // player methods
@@ -46,6 +56,12 @@ private:
 
     void setPlayerTwoConnection(int connectionDesc) {
         this->playerTwoConnectionDesc = connectionDesc;
+    }
+
+    void clearPlayers() {
+        std::lock_guard<std::mutex> lock(resourcesMutex);
+        this->playerOneConnectionDesc = -1;
+        this->playerTwoConnectionDesc = -1;
     }
 
     int setPlayer(int connectionDesc) {
@@ -98,6 +114,7 @@ private:
         return currentUser;
     }
 
+    // scheduler methods
     bool canGameStart() const {
         return this->playerTwoConnectionDesc != -1 && this->playerOneConnectionDesc != -1;
     }
@@ -107,6 +124,137 @@ private:
             if (this->canGameStart()) return;
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
+    }
+
+    bool isGameFinished() {
+        return this->winnerId != 0;
+    }
+
+    bool checkRow(std::vector<int> row, int playerId) {
+        int win = 0;
+        for(int i = 0; i < row.size(); i++) {
+            if (row[i] == playerId) win += 1;
+        }
+        return win == row.size();
+    }
+
+    std::vector<std::vector<int>> getPossibleRows() {
+        std::vector<std::vector<int>> possibleRows;
+
+        possibleRows.push_back(this->board[0]);
+        possibleRows.push_back(this->board[1]);
+        possibleRows.push_back(this->board[2]);
+
+        possibleRows.push_back(std::vector<int> {this->board[0][0], this->board[1][0], this->board[2][0]});
+        possibleRows.push_back(std::vector<int> {this->board[0][1], this->board[1][1], this->board[2][1]});
+        possibleRows.push_back(std::vector<int> {this->board[0][2], this->board[1][2], this->board[2][2]});
+
+        possibleRows.push_back(std::vector<int> {this->board[0][0], this->board[1][1], this->board[2][2]});
+        possibleRows.push_back(std::vector<int> {this->board[0][2], this->board[1][1], this->board[2][0]});
+
+        return possibleRows;
+    }
+    bool checkWinCondition(int playerId) {
+        auto possibleRows = this->getPossibleRows();
+        for (int i = 0; i < possibleRows.size(); i++) {
+            bool win = checkRow(possibleRows[i], playerId);
+            if (win) return win;
+        }
+        return false;
+    }
+
+    bool isBoardFull() {
+        for(int i = 0; i < BOARD_SIZE; i++) {
+            for(int j = 0; j < BOARD_SIZE; j++) {
+                if (!board[i][j]) return false;
+            }
+        }
+        return true;
+    }
+
+    void playTurnAndCheckWinCondition(int playerId) {
+        this->print("Player" + std::to_string(playerId) + " plays turn!", true);
+        if (playerId == 1) {
+            playerOneCanPlayTurnCV.notify_all();
+            std::unique_lock<std::mutex> lock(playerOneFinishedPlayingTurnMutex);
+            playerOneFinishedPlayingTurnCV.wait(lock);
+        }
+        if (playerId == 2) {
+            playerTwoCanPlayTurnCV.notify_all();
+            std::unique_lock<std::mutex> lock(playerTwoFinishedPlayingTurnMutex);
+            playerTwoFinishedPlayingTurnCV.wait(lock);
+        }
+        this->print("Finished", true);
+        printBoard(this->board);
+
+        bool win = this->checkWinCondition(playerId);
+        if (win) {
+            this->winnerId = playerId;
+            this->print("The game ended. User with id=" + std::to_string(playerId) + " has won!", true);
+        }
+        if (!win && this->isBoardFull()) {
+            this->winnerId = -1;
+            this->print("The game ended. No one wins this time. It's tie.", true);
+        }
+    }
+
+    void playUntilWin() {
+        while (true) {
+            // waiting to ensure threads that handle turns started waiting for event
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            // player one makes his turn
+            this->playTurnAndCheckWinCondition(1);
+            if(this->isGameFinished()) break;
+            // player two makes his turn
+            this->playTurnAndCheckWinCondition(2);
+            if(this->isGameFinished()) break;
+        }
+    }
+
+    void scheduleGame() {
+        this->waitForGameStart();
+        // sleeping here to avoid notifying the condition_variable
+        // before serveClient actually starts waiting for it
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+        this->clearBoard();
+        this->winnerId = 0;
+
+        this->print("All players are ready. Starting the game!", true);
+
+        // notifying serveClient that game is started
+        gameStartCV.notify_all();
+        this->playUntilWin();
+
+        // serveClient threads wait for new turn, so
+        // they have to be notified in order to initialize
+        // closing procedure
+        playerOneCanPlayTurnCV.notify_all();
+        playerTwoCanPlayTurnCV.notify_all();
+
+        this->clearPlayers();
+    }
+
+    void gameScheduler() {
+        while (true) {
+            scheduleGame();
+        }
+    }
+
+    // serveClient methods
+    void playTurn(user player) {
+        TicTacToeMessage currentBoardMessage;
+        currentBoardMessage.status = status.currentBoard;
+        currentBoardMessage.boardState = this->board;
+
+        sendMessage(this->socket, player.connectionDesc, currentBoardMessage);
+
+        auto playTurnCommand = waitForValidCommand(this->socket, player.connectionDesc, command.playTurn);
+        this->updateBoard(playTurnCommand.xCoord, playTurnCommand.yCoord, player.id);
+
+        TicTacToeMessage acceptedMessage;
+        acceptedMessage.status = status.accepted;
+        sendMessage(this->socket, player.connectionDesc, acceptedMessage);
     }
 
     void waitForTurnStart(user player) const {
@@ -129,66 +277,15 @@ private:
         }
     }
 
-    void gameScheduler() {
-        waitForGameStart();
-        // sleeping here to avoid notifying the condition_variable
-        // before serveClient actually starts waiting for it
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
-        this->clearBoard();
-        this->print("Game scheduler sending signal to start the game!", true);
-
-        // notifying serveClient that game is started
-        gameStartCV.notify_all();
-        this->playUntilWin();
+    void updateBoard(int xCoord, int yCoord, int value) {
+        this->board[xCoord][yCoord] = value;
     }
 
-    // TODO: switch to connectionDesc instead of player id
-    void playTurnAndCheck(int playerId) {
-        this->print("Game scheduler sending signal to thread " + std::to_string(playerId) + "  to start turn", true);
-        if (playerId == 1) {
-            playerOneCanPlayTurnCV.notify_all();
-            this->print("sent", false);
-            std::unique_lock<std::mutex> lock(playerOneFinishedPlayingTurnMutex);
-            playerOneFinishedPlayingTurnCV.wait(lock);
-        }
-        if (playerId == 2) {
-            playerTwoCanPlayTurnCV.notify_all();
-            this->print("sent", false);
-            std::unique_lock<std::mutex> lock(playerTwoFinishedPlayingTurnMutex);
-            playerTwoFinishedPlayingTurnCV.wait(lock);
-        }
-        // TODO: check result
-    }
-
-    void playUntilWin() {
-        // TODO: get result if win - break the loop and set winner
-        while (true) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            // player one makes his turn
-            playTurnAndCheck(1);
-            // player two makes his turn
-            playTurnAndCheck(2);
-            // TODO: should wait until first player waits on CV
-        }
-    }
-
-    void playTurn(user player) {
-        TicTacToeMessage turnStartedMessage;
-        turnStartedMessage.status = status.turnStarted;
-        // TODO: pass also current board state
-        sendMessage(this->socket, player.connectionDesc, turnStartedMessage);
-        // TODO: accept only playTurn command
-        waitForValidCommand(this->socket, player.connectionDesc, command.playTurn);
-        // TODO: make changes to board
-        // TODO: send accepted message
-    }
     void playGame(user player) {
         // waiting until the game is started
         std::mutex gameStartedMutex;
         std::unique_lock<std::mutex> lock(gameStartedMutex);
         gameStartCV.wait(lock);
-        this->print("Client" + std::to_string(player.id) + " thread was notified." , true);
 
         // sending game started message to client
         TicTacToeMessage gameStartedMessage;
@@ -198,14 +295,24 @@ private:
         while (true) {
             // waiting on condition_variable instance
             // until gameScheduler thread will notify it
-            waitForTurnStart(player);
-            this->print("Client" + std::to_string(player.id) + " thread was notified to start", true);
-
-            playTurn(player);
+            this->waitForTurnStart(player);
+            if (isGameFinished()) break;
+            this->playTurn(player);
             // notifying the turn is finished
             // accepted by gameScheduler
-            notifyTurnEnd(player);
+            this->notifyTurnEnd(player);
         }
+
+        TicTacToeMessage endOfGameMessage;
+        if (this->winnerId == player.id) {
+            endOfGameMessage.status = status.youWon;
+        } else if (this->winnerId != -1) {
+            endOfGameMessage.status = status.youLost;
+        } else {
+            endOfGameMessage.status = status.tie;
+        }
+        endOfGameMessage.boardState = this->board;
+        sendMessage(this->socket, player.connectionDesc, endOfGameMessage);
     }
 
     void serveClient(int connectionDesc) {
@@ -235,12 +342,10 @@ public:
             int connectionDesc = socket.waitForConnection();
             std::thread t1(&GameServer::serveClient, this, connectionDesc);
             t1.detach();
-            // TODO: create procedure thread that works with client until it disconnect
         }
     };
 };
 
-// TODO: process every connection in different thread
 int main() {
     auto server = GameServer();
     server.run();

@@ -24,6 +24,29 @@ private:
         }
     }
 
+
+    TicTacToeCommand inputCoordsDialog(TicTacToeCommand playTurnCommand, std::vector<std::vector<int>> boardState) {
+        int xCoord, yCoord;
+
+        while (true) {
+            std::cout << "Enter x coord: ";
+            std::cin >> xCoord;
+            std::cout << "Enter y coord: ";
+            std::cin >> yCoord;
+
+            // checking if the cell is empty
+            if(boardState[xCoord][yCoord] == 0) {
+                playTurnCommand.xCoord = xCoord;
+                playTurnCommand.yCoord = yCoord;
+                return playTurnCommand;
+            }
+
+            std::cout << "This cell is already marked with " + getCellRepr(boardState[xCoord][yCoord])
+            + ". Please, try again." << std::endl;
+        }
+
+    }
+
     user connectToGame() {
         TicTacToeCommand connectToGameCommand;
         connectToGameCommand.command = command.connectToGame;
@@ -55,16 +78,17 @@ private:
         return currentUser;
     }
 
-    void playTurn(user player) {
-        // TODO: get current board state, print it and ask for option
-        std::string anyOption;
-        std::cin >> anyOption;
+    void playTurn(TicTacToeMessage currentBoardMessage) {
+        this->print("It is your turn now.", false);
+        printBoard(currentBoardMessage.boardState);
 
+        this->print("Enter coords of the cell to put mark there.", false);
         TicTacToeCommand playTurnCommand;
         playTurnCommand.command = command.playTurn;
-        // TODO: include coords in option to the command
+
+        playTurnCommand = inputCoordsDialog(playTurnCommand, currentBoardMessage.boardState);
         writeCommand(this->socket, playTurnCommand);
-        // TODO: wait for accepted message
+        waitForValidMessage(this->socket, status.accepted);
     }
 
     void playGame(user player) {
@@ -73,11 +97,21 @@ private:
 
         while (true) {
             this->print("Please, wait until your turn starts.", false);
-            auto turnStartedMessage = waitForValidMessage(this->socket, status.turnStarted);
-
-            this->print("It is your turn now.", false);
-            // TODO: then play the turn
-            playTurn(player);
+            auto nextActionMessage = waitForValidMessage(this->socket);
+            if (nextActionMessage.status != status.currentBoard) {
+                printBoard(nextActionMessage.boardState);
+                if (nextActionMessage.status == status.youWon) {
+                    this->print("You won the game!", false);
+                }
+                if (nextActionMessage.status == status.youLost) {
+                    this->print("You lost the game :(", false);
+                }
+                if (nextActionMessage.status == status.tie) {
+                    this->print("Well done, the game ended as tie.", false);
+                }
+                break;
+            }
+            this->playTurn(nextActionMessage);
             this->print("Your turn has been ended.", false);
         }
 
