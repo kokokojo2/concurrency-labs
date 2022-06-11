@@ -17,22 +17,35 @@ struct commandEnum {
     int connectToGame = 1;
     int exitGame = 2;
     int playTurn = 3;
+    int watchGame = 4;
+    int disconnect = 5;
 } command;
 
+std::string getReprCommand(int commandId) {
+    if (commandId == command.connectToGame) return "play game";
+    if (commandId == command.exitGame) return "exit game";
+    if (commandId == command.playTurn) return "play turn";
+    if (commandId == command.watchGame) return "watch current game";
+    if (commandId == command.disconnect) return "disconnect";
+    return "unknown";
+}
 
 bool isValidCommand(int commandId) {
     return commandId == command.connectToGame ||
            commandId == command.exitGame ||
-           commandId == command.playTurn;
+           commandId == command.playTurn ||
+           commandId == command.watchGame ||
+           commandId == command.disconnect;
 }
 
 struct statusEnum {
     int accepted = 1;
     int error = 2;
+    int previousCommandInvalid = 3;
 } status;
 
 bool isValidMessageStatus(int statusId) {
-    return statusId == status.accepted || statusId == status.error;
+    return statusId == status.accepted || statusId == status.error || statusId == status.previousCommandInvalid;
 }
 
 struct TicTacToeCommand {
@@ -90,9 +103,9 @@ TicTacToeCommand parseRequest(const std::string& rawCommand) {
 }
 
 std::string commandToString(const TicTacToeCommand& ticTacToeCommand) {
-    std::string result = std::to_string(ticTacToeCommand.command);
+    std::string result = std::to_string(ticTacToeCommand.command) + ":";
     if(ticTacToeCommand.command == command.playTurn) {
-        result += ":" + std::to_string(ticTacToeCommand.xCoord) +
+        result += std::to_string(ticTacToeCommand.xCoord) +
                   "," + std::to_string(ticTacToeCommand.yCoord);
     }
 
@@ -141,5 +154,26 @@ void printMessage(const TicTacToeMessage& message) {
     } else {
         std::cout << "  statusId=" << message.status << std::endl;
     }
+}
+
+
+struct userType {
+    int player = 1;
+    int spectator = 2;
+    int exited = -1;
+    int noType = 0;
+} user_type;
+
+struct user {
+    int type;
+    int id;
+};
+
+std::string getUserRepr(user currentUser) {
+    if (currentUser.type == user_type.player) return "type=player, id=" + std::to_string(currentUser.id);
+    if (currentUser.type == user_type.spectator) return "type=spectator";
+    if (currentUser.type == user_type.exited) return "type=exited";
+    if (currentUser.type == user_type.noType) return "type=no type";
+    return "unknown";
 }
 
