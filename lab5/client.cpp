@@ -33,15 +33,20 @@ private:
             std::cout << "Enter y coord: ";
             std::cin >> yCoord;
 
+            if (xCoord >= BOARD_SIZE || yCoord >= BOARD_SIZE) {
+                std::cout << "One of the coords is out of range" << std::endl;
+                continue;
+            }
             // checking if the cell is empty
-            if(boardState[xCoord][yCoord] == 0) {
-                playTurnCommand.xCoord = xCoord;
-                playTurnCommand.yCoord = yCoord;
-                return playTurnCommand;
+            if(boardState[xCoord][yCoord] != 0) {
+                std::cout << "This cell is already marked with " + getCellRepr(boardState[xCoord][yCoord])
+                             + ". Please, try again." << std::endl;
+                continue;
             }
 
-            std::cout << "This cell is already marked with " + getCellRepr(boardState[xCoord][yCoord])
-            + ". Please, try again." << std::endl;
+            playTurnCommand.xCoord = xCoord;
+            playTurnCommand.yCoord = yCoord;
+            return playTurnCommand;
         }
 
     }
