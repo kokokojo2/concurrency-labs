@@ -9,7 +9,6 @@ class GameClient : public Logger {
 private:
     ClientSocket socket;
 
-    // TODO: make chooseCommandDialog instead
     int optionDialog(std::vector<std::string> options) {
         this->print("Showing choose option dialog:", false);
         int option;
@@ -55,8 +54,9 @@ private:
         user currentUser{};
 
          // user is connected to game as a player
-        if (responseMessage.status == status.accepted) {
+        if (responseMessage.status == status.connectedAsPlayer) {
             currentUser.type = user_type.player;
+            currentUser.id = responseMessage.userId;
          // the server is busy
         } else {
             this->print("The server has no free slots", false);
@@ -78,11 +78,11 @@ private:
         return currentUser;
     }
 
-    void playTurn(TicTacToeMessage currentBoardMessage) {
+    void playTurn(user player, TicTacToeMessage currentBoardMessage) {
         this->print("It is your turn now.", false);
         printBoard(currentBoardMessage.boardState);
 
-        this->print("Enter coords of the cell to put mark there.", false);
+        this->print("Enter coords of the cell to put" + getCellRepr(player.id) + " mark there.", false);
         TicTacToeCommand playTurnCommand;
         playTurnCommand.command = command.playTurn;
 
@@ -98,24 +98,44 @@ private:
         while (true) {
             this->print("Please, wait until your turn starts.", false);
             auto nextActionMessage = waitForValidMessage(this->socket);
-            if (nextActionMessage.status != status.currentBoard) {
+
+            if (nextActionMessage.status == status.gameFinished) {
                 printBoard(nextActionMessage.boardState);
-                if (nextActionMessage.status == status.youWon) {
+                if (nextActionMessage.winnerId == player.id)
                     this->print("You won the game!", false);
-                }
-                if (nextActionMessage.status == status.youLost) {
-                    this->print("You lost the game :(", false);
-                }
-                if (nextActionMessage.status == status.tie) {
+                else if (nextActionMessage.winnerId == -1)
                     this->print("Well done, the game ended as tie.", false);
+                else
+                    this->print("You lost the game :(", false);
+                break;
+            }
+
+            this->playTurn(player, nextActionMessage);
+            this->print("Your turn has been ended.", false);
+        }
+    }
+
+    void spectateGame(user spectator) {
+        while (true) {
+            auto gameProgressMessage = waitForValidMessage(this->socket);
+            printBoard(gameProgressMessage.boardState);
+            if (gameProgressMessage.status == status.gameProgress) {
+                this->print("User" + std::to_string(gameProgressMessage.userId)
+                            + " makes his turn. (sign - " + getCellRepr(gameProgressMessage.userId) + ")", false);
+            }
+            if (gameProgressMessage.status == status.gameFinished) {
+                this->print("Game was finished!", false);
+                if (gameProgressMessage.winnerId != -1)
+                    this->print("User" + std::to_string(gameProgressMessage.winnerId) + " has won the game", false);
+                if (gameProgressMessage.winnerId == -1) {
+                    this->print("It's tie!", false);
                 }
                 break;
             }
-            this->playTurn(nextActionMessage);
-            this->print("Your turn has been ended.", false);
         }
-
     }
+
+
 public:
     explicit GameClient(int port) : socket(port) {
         this->prefix = "Client";
@@ -131,7 +151,7 @@ public:
             this->playGame(currentUser);
         }
         if (currentUser.type == user_type.spectator) {
-            // TODO: handle spectator
+            this->spectateGame(currentUser);
         }
     };
 };

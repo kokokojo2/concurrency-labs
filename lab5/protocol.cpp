@@ -47,9 +47,9 @@ struct statusEnum {
     int gameStarted = 4;
     int turnStarted = 5;
     int currentBoard = 6;
-    int youWon = 7;
-    int youLost = 9;
-    int tie = 10;
+    int gameFinished = 7;
+    int connectedAsPlayer = 8;
+    int gameProgress = 9;
 } status;
 
 bool isValidMessageStatus(int statusId) {
@@ -59,16 +59,15 @@ bool isValidMessageStatus(int statusId) {
     statusId == status.gameStarted ||
     statusId == status.turnStarted ||
     statusId == status.currentBoard ||
-    statusId == status.youWon ||
-    statusId == status.youLost ||
-    statusId == status.tie;
+    statusId == status.gameFinished ||
+    statusId == status.connectedAsPlayer ||
+    statusId == status.gameProgress;
 }
 
 bool hasBoardInBody(int statusId) {
     return statusId == status.currentBoard ||
-    statusId == status.youWon ||
-    statusId == status.youLost ||
-    statusId == status.tie;
+    statusId == status.gameFinished ||
+    statusId == status.gameProgress;
 }
 
 struct TicTacToeCommand {
@@ -87,6 +86,8 @@ struct TicTacToeMessage {
     std::string errorMessage{};
     int status{};
     std::vector<std::vector<int>> boardState;
+    int winnerId{};
+    int userId{};
 };
 
 
@@ -175,13 +176,25 @@ TicTacToeMessage parseResponse(const std::string& rawMessage) {
     }
     parsedMessage.status = parsedMessageStatus;
 
+    if (parsedMessage.status == status.connectedAsPlayer) {
+        parsedMessage.userId = std::stoi(matches[2].str());
+    }
+
     if(hasBoardInBody(parsedMessage.status)) {
         std::vector<std::string> params = split_to_tokens(matches[2].str(), ',');
-        if (params.size() != BOARD_SIZE * BOARD_SIZE) {
-            parsedMessage.valid = false;
-            parsedMessage.errorMessage = "Wrong params for this command type.";
-            return parsedMessage;
+        if (parsedMessage.status == status.gameFinished) {
+            // getting the winner's id
+            parsedMessage.winnerId = std::stoi(params.back());
+            params.pop_back();
         }
+
+        if (parsedMessage.status == status.gameProgress) {
+            // getting the user's id
+            parsedMessage.userId = std::stoi(params.back());
+            params.pop_back();
+        }
+
+        // getting the board
         std::vector<std::vector<int>> board;
         for(int i = 0; i < params.size(); i+= BOARD_SIZE) {
             std::vector<int> boardRow = {
@@ -233,6 +246,16 @@ std::string messageToString(const TicTacToeMessage& ticTacToeMessage) {
     if (hasBoardInBody(ticTacToeMessage.status)) {
         serializedMessage += boardToString(ticTacToeMessage.boardState);
     }
+    if (ticTacToeMessage.status == status.gameFinished) {
+        serializedMessage += "," + std::to_string(ticTacToeMessage.winnerId);
+    }
+    if (ticTacToeMessage.status == status.gameProgress) {
+        serializedMessage += "," + std::to_string(ticTacToeMessage.userId);
+    }
+    if (ticTacToeMessage.status == status.connectedAsPlayer) {
+        serializedMessage += std::to_string(ticTacToeMessage.userId);
+    }
+
     return serializedMessage;
 }
 
@@ -242,7 +265,8 @@ void printMessage(const TicTacToeMessage& message) {
     if (!message.valid) {
         std::cout << "  Error message: " << message.errorMessage << std::endl;
     } else {
-        std::cout << "  statusId=" << message.status << std::endl;
+        std::cout << "  statusId=" << message.status << ", userId=" << message.userId
+        << ", winnerId=" << message.winnerId << std::endl;
     }
 
     if (hasBoardInBody(message.status)) {

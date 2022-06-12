@@ -1,4 +1,3 @@
-#include <iostream>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
@@ -15,7 +14,6 @@ std::mutex playerOneFinishedPlayingTurnMutex, playerTwoFinishedPlayingTurnMutex;
 std::condition_variable gameStartCV, playerOneCanPlayTurnCV, playerTwoCanPlayTurnCV;
 std::condition_variable playerOneFinishedPlayingTurnCV, playerTwoFinishedPlayingTurnCV;
 
-// TODO: one game, two clients
 class GameServer : public Logger {
 private:
     // communication data
@@ -105,7 +103,8 @@ private:
             } else {
                 // user was set successfully
                 currentUser.type = user_type.player;
-                message.status = status.accepted;
+                message.status = status.connectedAsPlayer;
+                message.userId = currentUser.id;
             }
         }
 
@@ -257,12 +256,12 @@ private:
         sendMessage(this->socket, player.connectionDesc, acceptedMessage);
     }
 
-    void waitForTurnStart(user player) const {
-        if (player.connectionDesc == this->playerOneConnectionDesc) {
+    void waitForTurnStart(int playerId) const {
+        if (playerId == 1) {
             std::unique_lock<std::mutex> lock(playerOneTurnStartMutex);
             playerOneCanPlayTurnCV.wait(lock);
         }
-        if (player.connectionDesc == this->playerTwoConnectionDesc) {
+        if (playerId == 2) {
             std::unique_lock<std::mutex> lock(playerTwoTurnStartMutex);
             playerTwoCanPlayTurnCV.wait(lock);
         }
@@ -295,24 +294,43 @@ private:
         while (true) {
             // waiting on condition_variable instance
             // until gameScheduler thread will notify it
-            this->waitForTurnStart(player);
+            this->waitForTurnStart(player.id);
             if (isGameFinished()) break;
             this->playTurn(player);
             // notifying the turn is finished
-            // accepted by gameScheduler
+            // waited on by gameScheduler
             this->notifyTurnEnd(player);
         }
 
         TicTacToeMessage endOfGameMessage;
-        if (this->winnerId == player.id) {
-            endOfGameMessage.status = status.youWon;
-        } else if (this->winnerId != -1) {
-            endOfGameMessage.status = status.youLost;
-        } else {
-            endOfGameMessage.status = status.tie;
-        }
+        endOfGameMessage.status = status.gameFinished;
+        endOfGameMessage.winnerId = this->winnerId;
         endOfGameMessage.boardState = this->board;
         sendMessage(this->socket, player.connectionDesc, endOfGameMessage);
+    }
+    void sendGameProgress(user spectator, int playerId) {
+        TicTacToeMessage gameProgressMessage;
+        gameProgressMessage.status = status.gameProgress;
+        gameProgressMessage.userId = playerId;
+        gameProgressMessage.boardState = board;
+
+        sendMessage(this->socket, spectator.connectionDesc, gameProgressMessage);
+    }
+
+    void spectateGame(user spectator) {
+        while (true) {
+            if(isGameFinished()) break;
+            this->waitForTurnStart(1);
+            sendGameProgress(spectator, 1);
+            if(isGameFinished()) break;
+            this->waitForTurnStart(2);
+            sendGameProgress(spectator, 2);
+        }
+        TicTacToeMessage gameFinishedMessage;
+        gameFinishedMessage.status = status.gameFinished;
+        gameFinishedMessage.boardState = board;
+        gameFinishedMessage.winnerId = this->winnerId;
+        sendMessage(this->socket, spectator.connectionDesc, gameFinishedMessage);
     }
 
     void serveClient(int connectionDesc) {
@@ -327,9 +345,10 @@ private:
             this->playGame(currentUser);
         }
         if (currentUser.type == user_type.spectator) {
-            // TODO: handle spectator
+            this->spectateGame(currentUser);
         }
     }
+
 public:
     GameServer() : socket(SERVER_PORT) {
         this->prefix = "Server";
