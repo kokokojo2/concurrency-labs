@@ -1,4 +1,4 @@
-# paralel-computing-labs
+# concurrency-labs
 
 ## Протоколи
 - [Лабораторна робота 1](https://docs.google.com/document/d/1GF7SXGZwhzGKTcombB8prdsaGFM-mfIwOIZ70IXaGPE/edit?usp=sharing)
