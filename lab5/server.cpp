@@ -319,11 +319,11 @@ private:
 
     void spectateGame(user spectator) {
         while (true) {
-            if(isGameFinished()) break;
             this->waitForTurnStart(1);
-            sendGameProgress(spectator, 1);
             if(isGameFinished()) break;
+            sendGameProgress(spectator, 1);
             this->waitForTurnStart(2);
+            if(isGameFinished()) break;
             sendGameProgress(spectator, 2);
         }
         TicTacToeMessage gameFinishedMessage;
